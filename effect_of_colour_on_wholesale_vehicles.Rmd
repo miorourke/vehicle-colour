@@ -1,0 +1,133 @@
+---
+title: "vehicle-colour"
+author: "Michael O'Rourke"
+date: "April 27, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+source('integrate.R')
+knitr::opts_chunk$set(echo = TRUE)
+
+
+```
+
+#Does colour effect the speed and the value of a used car in UK auctions?
+
+There are many factors that affect the speed and value of a used car. They type and spec of a vehicle; a top of the range BMW with all the trimmings will almost always be worth more than standard spec mid ranged Daewoo. Even within vehicle ranges, the age, mileage and condition of the vehicle are strong drivers of wholesale price. An almost new vehicle will be worth more than a 10 years old vehicle. Seasonality can play a part too. The supply and demand for a vehicle can change throughout the year. The demand for convertibles in the months approaching summer can push the price up in anticipation for increased consumer demand. Likewise, the influx of ex-fleet vehicles can around plate change can push prices down.
+
+Even when we take these factors into consideration, there is still variability in the price of a vehicle. Is this variability due to the general randomness of the real world; which buyers were at the sale; did they miss breakfast and were too grumpy to bid on a vehicle? Or are there other key factors about a vehicle that make a difference to the perceived value?
+
+Internally, we often hear our valuation experts talk about the impact the colour of the vehicle has on wholesale buyer’s decision making. They believe (when all else is equal), the exterior colour can make a difference to the value and the speed of the vehicle.
+
+This blog post attempts to find evidence to support this hypothesis.
+
+###Data
+
+This analysis uses Manheim auction data from 2016-2017.
+
+
+First things first, we need to mitigate for the main drivers of price variance.
+
+* Difference in vehicle specification
+* Age of the vehicle
+* Mileage of the vehicle
+* Condition of the vehicle
+* Seasonality of the vehicle
+* Location of the vehicle - this can reduce the variance due to different types of buyers and their wallets
+
+####Difference in vehicle specification
+
+Only vehicles with the same CAP ID will be compared. This alleviates the majority of the differences between vehicle specifications. This does not explain all of the specification differences. A particular vehicle could have optional extras or there could have been a slight change to the vehicle spec during the CAP IDs life cycle.
+
+####Age of a vehicle
+
+As the graph below shows, age has a significant effect on the price of a vehicle. Low age vehicles are worth more than old vehicles. This relationship is not linear. There is a steep initial drop, which stabilises, before levelling off as a vehicle gets older. Once vehicles pass 15 years, the effect on price is less significant.
+
+To make sure we compare similarly aged vehicles, age cohorts will be created. The size of each cohort will reflect the age depreciation curve. Young vehicles will be grouped into small ranged cohorts (3 months for less than 1 year old vehicles, 6 months for 1-4 year old vehicles) and older vehicles will be grouped into larger ranged cohorts (2 years for 15 year old vehicles)
+
+_Relationship between age and wholesale price_
+```{r age and sold price relationship}
+# Create a scatterplot showing age and wholesale price relationship
+# Use a sample of the data so that the curve is easier to see
+# Limited to £50k for visibilities sake
+
+ggplot(sample_n(data_subset, 10000), aes(age_months, sold_price)) + geom_point(colour = 43, alpha = 0.5) + stat_smooth(method = "lm", formula = y ~ log(x), se = FALSE, colour = 'red') + labs(x = "Age (months)", y = "Sold price") + coord_cartesian(ylim = c(0,50000)) + ggtitle("Relationship between age and sold price", "Random sample of 10,000 vehicles\nUp to £50,000")
+
+
+```
+
+```{r creating age cohorts}
+# Create the age cohorts
+# Create a sequence of cutoffs. Use unique so that the beginning/end of each sequence is not duplicated
+age_cutoffs <- unique(c(seq(3, 12, by = 3), seq(12, 48, by =6), 
+                        seq(48, 144, by = 12), seq(144, 264, by = 24)))
+
+# Create labels for these cutoffs
+age_labels <- as.character(age_cutoffs[1:22]) #  leave of the last cutoff as it is out of range of the data
+
+# Use the cut function to create a new column for the age cohorts
+data_subset_with_age_cohorts <- data_subset %>%
+  mutate(age_cohort = cut(age_months, breaks = age_cutoffs, labels = age_labels))
+
+```
+
+
+####Mileage of a vehicle
+
+Mileage has a similar relationship to sold price as age. There is an initial steep drop, it stabilises and levels off. 
+
+```{r relationship between mileage and sold price}
+# Create a scatterplot showing age and wholesale price relationship
+# Use a sample of the data so that the curve is easier to see
+# Limited to £50k for visibilities sake
+
+ggplot(sample_n(data_subset, 10000), aes(mileage, sold_price)) + geom_point(colour = 43, alpha = 0.5) + stat_smooth(method = "lm", formula = y ~ log(x), se = FALSE, colour = 'red') + labs(x = "Mileage", y = "Sold price") + coord_cartesian(ylim = c(0,50000)) + ggtitle("Relationship between mileage and sold price", "Random sample of 10,000 vehicles\nUp to £50,000")
+```
+
+
+```{r creating mileage cohorts and seasonality}
+
+mileage_cutoffs <- unique(c(seq(1000, 10000, by = 1000), seq(10000, 30000, by = 5000),
+                          seq(30000, 100000, by = 10000), seq(100000, 260000, by = 20000)))
+
+mileage_labels <- as.character(mileage_cutoffs[1:28])
+
+
+# Create a column which month each sale occured
+# This will be used to mitigate the effect of seasonality
+
+# Create function to convert month numbers to equivalent string
+
+convert_months <- function(x){
+  ifelse(x == 1, "Jan",
+  ifelse(x == 2, "Feb",
+  ifelse(x == 3, "Mar",
+  ifelse(x == 4, "Apr",
+  ifelse(x == 5, "May",
+  ifelse(x == 6, "Jun",
+  ifelse(x == 7, "Jul",
+  ifelse(x == 8, "Aug",
+  ifelse(x == 9, "Sep",
+  ifelse(x == 10, "Oct",
+  ifelse(x == 11, "Nov",
+  ifelse(x == 12, "Dec", NA))))))))))))
+}
+
+data_subset_cohorts <- data_subset_with_age_cohorts %>%
+  mutate(mileage_cohort = cut(mileage, breaks = mileage_cutoffs, labels = mileage_labels),
+         month = convert_months(month(date_sold)))
+
+
+
+```
+
+
+```{r amend prices for inflation using cpi score}
+
+```
+
+
+
+
+
