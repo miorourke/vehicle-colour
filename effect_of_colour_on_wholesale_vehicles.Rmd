@@ -7,12 +7,13 @@ output: html_document
 
 ```{r setup, include=FALSE}
 source('integrate.R')
+source('functions.R')
 knitr::opts_chunk$set(echo = TRUE)
 
 
 ```
 
-#Does colour effect the speed and the value of a used car in UK auctions?
+#Does colour effect the value of a used car in UK auctions?
 
 There are many factors that affect the speed and value of a used car. They type and spec of a vehicle; a top of the range BMW with all the trimmings will almost always be worth more than standard spec mid ranged Daewoo. Even within vehicle ranges, the age, mileage and condition of the vehicle are strong drivers of wholesale price. An almost new vehicle will be worth more than a 10 years old vehicle. Seasonality can play a part too. The supply and demand for a vehicle can change throughout the year. The demand for convertibles in the months approaching summer can push the price up in anticipation for increased consumer demand. Likewise, the influx of ex-fleet vehicles can around plate change can push prices down.
 
@@ -34,7 +35,7 @@ First things first, we need to mitigate for the main drivers of price variance.
 * Mileage of the vehicle
 * Condition of the vehicle
 * Seasonality of the vehicle
-* Location of the vehicle - this can reduce the variance due to different types of buyers and their wallets
+* Inflation
 
 ####Difference in vehicle specification
 
@@ -123,9 +124,123 @@ data_subset_cohorts <- data_subset_with_age_cohorts %>%
 ```
 
 
+####Adjusting for inflation
+
+The UK Office of National Statistics (ONS) publishes monthly Consumer Price Index (CPI) figures for each major consumer sector. The closest CPI sector available for wholesale vehicles is the used car retail CPI figures. As the retail market drives the wholesale market, assuming that the wholesale CPI figures are similar to the retail CPI figures does not seem unreasonable. All sold prices will be adjusted to the December 2017 levels (the last month in the dataset).
+The ONS data can be downloaded here: _link to ONS CPI scores_
+
 ```{r amend prices for inflation using cpi score}
+#CPI data
+#Loaded with 1,391 columns. All blank after column 9. Keep only columns I'm interested in (used car CPI)
+used_car_cpi_scores <- used_car_cpi_scores %>% select(1,3)
+#Rename columns
+colnames(used_car_cpi_scores) <- c("title", "used_car_cpi_score")
+
+#CPI dataset contains CPI scores at a annual, quarterly and monthly level. Use monthly
+#Example format: 2016 JUL
+
+# Create a column with the CPI data format
+data_subset_cohorts_temp <- data_subset_cohorts %>%
+  mutate(cpi_date_ref = convert_date_to_cpi_date(date_sold))
+
+# Stop if any of the references are null values
+stopifnot(anyNA(data_subset_cohorts_temp$date_sold)== FALSE)
+
+# Join the CPI score data to the vehicle data using the CPI date reference
+joined_data_subset <- data_subset_cohorts_temp %>%
+  left_join(used_car_cpi_scores, by = c("cpi_date_ref" = "title")) %>% 
+    mutate(used_car_cpi_score = as.numeric(used_car_cpi_score)) # convert CPI values to numeric
+
+# Set December 2017 as the reference point
+# All prices will be adjusted to December 2017
+inflation_reference_value <- as.numeric(used_car_cpi_scores %>% filter(title == '2016 DEC') %>% select(used_car_cpi_score))
+
+# Adjust prices
+adjusted_price_dataset <- joined_data_subset %>%
+  mutate(adjusted_sold_price = round((sold_price/used_car_cpi_score) * inflation_reference_value))
+
+# Histogram showing the effect of the adjustment
+# ggplot(adjusted_price_dataset %>% 
+#          mutate(adjustment_percentage = ((adjusted_sold_price - sold_price)/ sold_price)), # create inflation % change
+#        aes(adjustment_percentage)) + geom_histogram(fill = 43, colour = 'grey', alpha = 0.5, binwidth = 0.01) +
+#   ggtitle("Distribution of inflation adjustments")
 
 ```
+
+####Condition
+
+Vehicle conditions are graded using the NAMA standards. These grades are between one and five. One is the best condition, five the lowest. vehicles which don't meet the criteria for grade five are marked as unclassified. 
+
+Only vehicles with the same grade will be compared to each other.
+
+###Seasonality
+
+Within the automotive industry, there is an assumption that certain types of vehicles have a higher demand (and therefore higher price) at different times of the year. For example, convertible vehicles are expected to be in higher demand before the summer than after. Likewise, 4x4 vehicles are expected to be in higher demand in the run up to winter.
+
+
+_Something about plate change?_
+
+To take this into effect, sales will be split into cohorts based on the time of the year of their sale. If our dataset was larger, the cohorts could be as granular as months. Unfortunately, when you take into consideration the vehicle type, age, mileage and condition cohorts the number of vehicles available for comparison is likely to be small. For that reason, the cohorts will be at quarter level.
+
+```{r create seasonality cohorts}
+
+seasonality_dataset <- adjusted_price_dataset %>%
+  mutate(seasonality_cohort =  quarter(date_sold))
+
+```
+
+
+To summarise, only vehicles with the same cap ID, age cohort, mileage cohort, condition grade and seasonality cohort will be compared. In addition, all prices have been adjusted for inflation to December 2017 prices. 
+
+That's a lot of restrictions, will there be any groups of vehicles with large enough sample sizes to compare against each other?
+
+```{r sample size of the cohorts}
+# Create groups with the same age, mileage, condition, cap_id, and seasonality
+vehicle_cohort_dataset <- seasonality_dataset %>%
+  mutate(vehicle_group = paste(cap_id, age_cohort, mileage_cohort, condition_grade, seasonality_cohort, sep = '-'))
+
+# count how many observations per vehicle group
+observations_per_vehicle_group <- vehicle_cohort_dataset %>%
+  group_by(vehicle_group) %>%
+  summarise(no_of_observations = n()) %>%
+  arrange(-no_of_observations) 
+
+ggplot(observations_per_vehicle_group %>% top_n(20, no_of_observations), 
+       aes(reorder(vehicle_group, -no_of_observations), no_of_observations)) +
+  geom_col(fill = "#00528A", colour = "#a8aaac") + labs(x = "Vehicle group", y = "No of observations") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  ggtitle("Number of observations per vehicle group", "Top 20 vehicle groups")
+
+```
+
+As expected, the sample size of each group is quite small. The largest group has only 113 observations, the 10th has 49 and the 20th has 34. As much as we would like these groups to be larger, the importance of specificity far outweighs the need for large sample sizes.
+
+####What should be our minimum sample size?
+
+If our cut off is too high, then there are two problems. The most obvious is that it gives us too few groups to compare colours in. The second, is to do with the variety of vehicles. The eagle eyed amongst us would have noticed that the CAP IDs of the top 20 groups are very similar. In fact, 14 of the top 20 groups are Fiesta's, and 17 are Fords. If we set the cut off too high, we will only be able to compare how colour affects young, low mileage, Ford Fiestas.
+
+If our cut off it too low, then we end up with thousands of groups with a couple of vehicles to compare which is unlikely to tell us anything more than random chance would. Approximately, 99% of all the vehicle groups have 5 or less observations.
+
+Ten observations feels too low and twenty observations reduces the breadth of vehicle models we can compare. A reasonable compromise seems to be 15 observations per vehicle group. This gives us 232 vehicle groups to compare.
+
+###Colours
+
+The simple days of only having to remember the seven colours of the raindow have long done. In a world where there are nearly 2,000 pantone colours available and even black has different shades. It should be no surprise that there are 1,614 'different' colours of vehicles within our dataset. When designers and marketing teams combine the possibilities are endless. A couple favourites are 'Lunar sky brown' and 'Pepper dust'.
+
+For this analysis, we'll be going back to basics with our colour descriptions. 'Moroccan red' and 'Tango red metallic' will be both classified as 'red', 'Sea grey' and 'Storm grey' are both 'grey'. This will result in some dropped observations, what colour of the rainbow is 'fashionista' or 'vison'.
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

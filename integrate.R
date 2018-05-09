@@ -148,6 +148,10 @@ set.seed(2345)
 
 load(file = '../../data/vehicle-colour/data_subset.rda')
 
+## Load CPI data
+#Load CPI data sourced from the ONS
+used_car_cpi_scores <- read.csv(file = '../../data/kbb-valuation-engine/ons_cpi_scores_used_cars.csv', header = T, stringsAsFactors = F)
+
 
 
 
