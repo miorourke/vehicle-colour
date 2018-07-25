@@ -10,6 +10,7 @@ output:
 ```{r setup, include=FALSE}
 source('integrate.R')
 source('functions.R')
+library(magick)
 knitr::opts_chunk$set(echo = TRUE)
 
 
@@ -219,11 +220,51 @@ adjusted_price_dataset <- joined_data_subset %>%
 
 ```
 
+How does this affect the prices of our vehicles?
+```{r changes in prices due to inflation}
+#Compare prices that go up and prices that go down
+#Plot CPI trends
+#Summarise the CPI per month
+monthly_cpi <- adjusted_price_dataset %>%
+  mutate(month_year = round_date(date_sold, unit  = "month")) %>%
+  group_by(month_year) %>%
+  summarise(monthly_cpi = max(used_car_cpi_score))
+#CPI trends
+ggplot(monthly_cpi, aes(month_year, as.numeric(monthly_cpi))) + geom_point() + geom_line() + coord_cartesian(ylim = c(0, 100))
+#Median monthly price before CPI adjustment
+monthly_price_summary <- adjusted_price_dataset %>%
+  mutate(month_year = round_date(date_sold, unit  = "month")) %>%
+   group_by(month_year) %>%
+  summarise(median_pre_adjustment_price = median(sold_price),
+            median_adjusted_price = median(adjusted_sold_price))
+#Plot pre adjusted prices
+ggplot(monthly_price_summary, aes(month_year, median_pre_adjustment_price)) + geom_col(fill = "red", colour = "#a8aaac", alpha = 0.8) + coord_cartesian(ylim = c(0,5500)) + labs(x = "Date", y = "Median price (£)")
+ggsave('../../data/vehicle-colour/pre_adjusted_col_chart.png')
+#CPI trends
+ggplot(monthly_cpi, aes(month_year, as.numeric(monthly_cpi))) + geom_point() + geom_line() + coord_cartesian(ylim = c(0, 100)) + labs(x = "Date", y = "CPI score")
+ggsave('../../data/vehicle-colour/cpi_trends.png')
+#Post adjustment
+ggplot(monthly_price_summary, aes(month_year, median_adjusted_price)) + geom_col(fill = "#00528A", colour = "#a8aaac", alpha = 0.8) + coord_cartesian(ylim = c(0,5500)) + labs(x = "Date", y = "Median price (£)")
+ggsave('../../data/vehicle-colour/adjusted_col_chart.png')
+#save images as png
+pre_adjusted_col_chart <- image_read('../../data/vehicle-colour/pre_adjusted_col_chart.png')
+cpi_trends <- image_read('../../data/vehicle-colour/cpi_trends.png')
+adjusted_col_chart <- image_read('../../data/vehicle-colour/adjusted_col_chart.png')
+
+cpi_effect <- image_morph(c(pre_adjusted_col_chart, cpi_trends, adjusted_col_chart), frames = 8)
+cpi_animation <- image_animate(cpi_effect, fps = 2)
+print(cpi_animation)
+
+#Save gif
+#image_write(cpi_animation, "../../data/vehicle-colour/cpi_animation.gif") # this takes about 10 minutes
+
+```
 
 
 ###Seasonality
 
 Within the automotive industry, there is an assumption that certain types of vehicles have a higher demand (and therefore higher price) at different times of the year. For example, convertible vehicles are expected to be in higher demand before the summer than after. Likewise, 4x4 vehicles are expected to be in higher demand in the run up to winter.
+
 
 
 _Something about plate change?_
@@ -236,6 +277,61 @@ seasonality_dataset <- adjusted_price_dataset %>%
   mutate(seasonality_cohort =  quarter(date_sold))
 
 ```
+
+###How does demand change throughout the year?
+
+```{r how does demand change throughout the year?}
+#Create data model with total sales per month per body style
+#Do certain body styles have seasonal demand
+seasonal_demand <- adjusted_price_dataset %>%
+  #Create month variable
+  mutate(month_of_year = format(date_sold,"%B")) %>%
+  #consolidate body styles
+  mutate(body_style = case_when(body_style == "Cabriolet" ~ "Convertible",
+                                body_style == "Roadster" ~ "Convertible",
+                                body_style == "Soft-Top" ~ "Convertible",
+                                body_style == "Hardtop" ~ "Convertible",
+                                body_style == "Tourer" ~ "Estate",
+                                TRUE ~ body_style)) %>%
+  #Count number of sales per body style per month of the year
+  group_by(body_style, month_of_year) %>%
+  summarise(no_of_sales = n()) 
+  #convert and reorder month_of_year
+  seasonal_demand$month_of_year <- factor(seasonal_demand$month_of_year, levels = c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"))
+  
+#Total sales per body style
+total_sales_per_body_style <- adjusted_price_dataset %>%
+  group_by(body_style) %>%
+  summarise(total_sales = n())
+
+#Join back seasonal demand
+
+seasonal_demand_enhanced <- seasonal_demand %>%
+  left_join(total_sales_per_body_style, by = "body_style") %>%
+  mutate(percent_of_total = no_of_sales/total_sales)
+
+#Plot sales per month
+#Do not have values on the y-axis. Sensitive information
+ggplot(seasonal_demand, aes(x = month_of_year, y = no_of_sales)) + geom_col(fill = "#00528A", colour = "#a8aaac", alpha = 0.8) + theme(axis.text.x = element_text(angle = 90, hjust = 1), axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) + labs(x = "Month", y = "Sales")
+
+
+
+
+img <- image_graph(600, 340, res = 96)
+datalist <- split(seasonal_demand_enhanced, seasonal_demand_enhanced$body_style)
+out <- lapply(datalist, function(data_){
+  p <- ggplot(data_, aes(x = month_of_year, y = percent_of_total)) + geom_col(fill = "#00528A", colour = "#a8aaac", alpha = 0.8) + theme(axis.text.x = element_text(angle = 90, hjust = 1), axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) + labs(x = "Month", y = "% of total sales") + ggtitle(data_$body_style)
+  print(p)
+})
+dev.off()
+sales_per_body_style <- image_animate(img, fps = 0.5)
+print(sales_per_body_style)
+image_write(sales_per_body_style, "../../data/vehicle-colour/sales_per_body_style.gif") 
+
+```
+
 
 
 To summarise, only vehicles with the same cap ID, age cohort, mileage cohort, condition grade and seasonality cohort will be compared. In addition, all prices have been adjusted for inflation to December 2017 prices. 
@@ -276,6 +372,102 @@ Ten observations feels too low and twenty observations reduces the breadth of ve
 The simple days of only having to remember the seven colours of the rainbow have long done. In a world where there are nearly 2,000 pantone colours available and even black has different shades. It should be no surprise that there are 1,614 'different' colours of vehicles within our dataset. When designers and marketing teams combine the possibilities are endless. A couple favourites are 'Lunar sky brown' and 'Pepper dust'.
 
 For this analysis, we'll be going back to basics with our colour descriptions. 'Moroccan red' and 'Tango red metallic' will be both classified as 'red', 'Sea grey' and 'Storm grey' are both 'grey'. This will result in some dropped observations, what colour of the rainbow is 'fashionista' or 'vision'.
+
+```{r consolidating colours}
+list_of_colour <- as.data.frame(cbind(exterior_body_colour = unique(seasonality_dataset$exterior_body_colour)))
+
+consolidate_colour <- function(x){
+  x %>% mutate(colour_group = case_when(str_detect(exterior_body_colour, "GREEN") ~ "green",
+                         str_detect(exterior_body_colour, "SILVER") ~ "silver",
+                         str_detect(exterior_body_colour, "BLUE") ~ "blue",
+                         str_detect(exterior_body_colour, "GREY") ~ "grey",
+                         str_detect(exterior_body_colour, "GOLD") ~ "gold",
+                         str_detect(exterior_body_colour, "ORANGE") ~ "orange",
+                         str_detect(exterior_body_colour, "TURQUOISE") ~ "green",
+                         str_detect(exterior_body_colour, "BLACK") ~ "black",
+                         str_detect(exterior_body_colour, "BRONZE") ~ "orange",
+                         str_detect(exterior_body_colour, "RED") ~ "red",
+                         str_detect(exterior_body_colour, "WHITE") ~ "white",
+                         str_detect(exterior_body_colour, "YELLOW") ~ "yellow",
+                         str_detect(exterior_body_colour, "SAPPHIRE") ~ "blue",
+                         str_detect(exterior_body_colour, "GREEN") ~ "green",
+                         # str_detect(exterior_body_colour, "GREEN") ~ "green",
+                         # str_detect(exterior_body_colour, "GREEN") ~ "green",
+                         # str_detect(exterior_body_colour, "GREEN") ~ "green",
+                         # str_detect(exterior_body_colour, "GREEN") ~ "green",
+                         TRUE ~ "other"
+  ))
+}
+
+colour_temp <- consolidate_colour(vehicle_cohort_dataset)
+
+#Plot the number of observations per colour
+ggplot(colour_temp %>% group_by(colour_group) %>% summarise(n = n()), 
+       aes(reorder(colour_group, -n), n)) +
+  geom_col(fill = "#00528A", colour = "#a8aaac", alpha = 0.8) + labs(x = "Colour", y = "No of observations") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  ggtitle("Number of observations per colour")
+
+#Show the reduction in colours
+# non_grouped_colour_heatmap <- ggplot(colour_temp %>% group_by(exterior_body_colour) %>% summarise(median_sold_price = median(sold_price), no_of_vehicles = n()), aes(x= exterior_body_colour, y = median_sold_price)) + geom_raster(aes(fill = no_of_vehicles), interpolate = T)
+
+```
+
+
+```{r}
+#Only include vehicle groups with more than n observations
+n <- 10
+vehicle_group_above_min_observations <- observations_per_vehicle_group %>%
+  filter(no_of_observations >= n)
+
+vehicle_group_subset <- colour_temp %>%
+  filter(vehicle_group %in% vehicle_group_above_min_observations$vehicle_group)
+
+#Rank the colours based on the median sold price
+colour_per_vehicle_group <- vehicle_group_subset %>%
+  group_by(vehicle_group, colour_group) %>%
+  summarise(no_of_vehicles = n(),
+            median_sold_price = median(sold_price)) %>%
+  mutate(sold_price_rank = order(vehicle_group, colour_group, decreasing = T))
+
+#boxplot of the distribution of ranks
+ggplot(colour_per_vehicle_group, aes(x = as.factor(colour_group), y = sold_price_rank)) + geom_boxplot(colour = 43) + geom_jitter(alpha = 0.2) + scale_y_reverse() + labs(x = "Colour", y = "Median price rank")
+
+#Need to only include vehicle groups with a variety of colours
+#Only include vehicle groups with more than n colours
+colour_variety_per_vehicle_group <- colour_per_vehicle_group %>%
+  group_by(vehicle_group) %>%
+  tally() %>%
+  filter(n>=4)
+
+#boxplot of the distribution of ranks
+ggplot(colour_per_vehicle_group %>% filter(vehicle_group %in% colour_variety_per_vehicle_group$vehicle_group), aes(x = as.factor(colour_group), y = sold_price_rank)) + geom_boxplot(colour = 43) + geom_jitter(alpha = 0.2) + scale_y_reverse() + labs(x = "Colour", y = "Median price rank")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

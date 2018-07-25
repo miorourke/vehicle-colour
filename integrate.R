@@ -3,7 +3,9 @@
 #######################################
 
 
-packages_to_install <- c("tidyverse", "RODBC", "rmarkdown", "knitr", "lubridate")
+packages_to_install <- c("tidyverse", "RODBC", "rmarkdown", "knitr", "lubridate", "devtools")
+#Install gganimate from github 
+#install_git("https://github.com/thomasp85/gganimate")
 # install.packages(packages_to_install)
 
 # Note, loading tidyverse does not load all packages installed with tidyverse, only the core
