@@ -26,7 +26,7 @@ The automotive industry is not short of marketeers (or designers). Their influen
 
 Clearly, someone within the industry thinks that colour is important. But with so much variety, and so many contrasting tastes, does colour make a difference to the value of a vehicle?
 
-Internally, our valuation experts often tell us about the importance of colour; "white cars will almost always be worth more" or "avoid doom blue coloured cars". There will always be cases where colour does have an influence, just as there will always be cases where it doesn't. What we are interested in, is whether colour has a systematic, market level effect on the value of a vehicle. All else being equal, does the colour of the vehicle influence the selling price?
+Internally, our valuation experts often tell us about the importance of colour; "white cars will almost always be worth more" or "avoid dune blue coloured cars". There will always be cases where colour does have an influence, just as there will always be cases where it doesn't. What we are interested in, is whether colour has a systematic, market level effect on the value of a vehicle. All else being equal, does the colour of the vehicle influence the selling price?
 
 ###Main drivers of price
 
@@ -87,7 +87,8 @@ For our purposes, small age cohorts will be created. The size of the groups is d
 # Create the age cohorts
 # Create a sequence of cutoffs. Use unique so that the beginning/end of each sequence is not duplicated
 age_cutoffs <- unique(c(seq(3, 12, by = 3), seq(12, 48, by =6), 
-                        seq(48, 144, by = 12), seq(144, 264, by = 24)))
+                        seq(48, 144, by = 12), seq(144, 264, by = 24))) 
+#Use plate instead of age
 
 # Create labels for these cutoffs
 age_labels <- as.character(age_cutoffs[1:22]) #  leave of the last cutoff as it is out of range of the data
@@ -447,9 +448,21 @@ ggplot(colour_per_vehicle_group %>% filter(vehicle_group %in% colour_variety_per
 
 
 
+```{r should I use log(sold)price instrad of price}
+#What is the distribution of sold prices?
+
+ggplot(seasonality_dataset, aes(sold_price)) + geom_histogram(binwidth = 500) + geom_vline( xintercept = median(seasonality_dataset$sold_price)) + geom_vline( xintercept = mean(seasonality_dataset$sold_price), colour = "red")
+
+ggplot(seasonality_dataset, aes(log(sold_price))) + geom_histogram(binwidth = 0.5) + geom_vline( xintercept = median(log(seasonality_dataset$sold_price))) + geom_vline( xintercept = mean(log(seasonality_dataset$sold_price)), colour = "red")
 
 
+```
 
+
+Test statistics for the median
+moods median test pearsons chi squared test
+Potentially use old school test stats
+Matching inference (not for now)
 
 
 
