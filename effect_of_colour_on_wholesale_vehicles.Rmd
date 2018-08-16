@@ -35,7 +35,7 @@ This is followed by the condition of the vehicle. A brand new, low mileage vehic
 
 Then come the market influences. Supply and demand for a particular vehicle can change over time. The hot, new hatchback can soon become garden variety through no fault of its own (here's looking at you Fiat 500). However, it is not only fashions and tastes that drive demand, market seasonality also plays its part. There is an expectation within the industry that certain vehicle types are worth more at different times of the year. For example, convertibles are thought to sell better before summer than before winter so are worth more. Likewise, 4X4s are anticipated to sell better as weather conditions worsen in late autumn.
 
-To able to attempt to answer our question, these factors will need to be mitigated and controlled.
+To able to attempt to answer our question, we will need to control (as best we can) for these factors.
 
 ###Our data
 
@@ -52,18 +52,19 @@ The second advantage is that there is no fixed price for a vehicle before the bi
 
 The industry standard vehicle identifier in the market is the CAP ID/CAP Code. This identifies a vehicle to a high degree of granularity. Vehicles with the same CAP ID, have the same manufacturer, range, model, derivative, engine size, fuel type, drive train, transmission, no of doors, and many more technical specifications. They also have relatively short production life-cycles, usually between 3 to 5 years. This makes it ideal for controlling for differences in vehicle specification. There are limitations to it. Although it categorises vehicles with standard equipment (such as leather seats or navigation systems), it does not control for any optional extras a consumer might have added. These extras aren't something we can control for within our dataset.
 
-*Only vehicles with the same CAP ID will be compared.*
+For the purposes of this analysis, only vehicle within the same CAP ID will be compared to each other.
 
 ###Vehicle conditions 
 
 ####Age of a vehicle
 
-As a vehicle gets older, it's value decreases. The rate of depreciation (influence of age on price) also changes as a vehicle gets older.
+With the exception of some vintage/high performance vehicles, as a car gets older it's value decreases. 
 
 The graph below shows the relationship between age and wholesale price. We've used a random sample of the data to make it easier to see the relationship. Age, measured in months between the registration date and sold date, is along the x-axis (young vehicles towards the left, older vehicles to the right). Sold price, measured in £, is along the y-axis, lower values at the bottom, higher prices at the top. Each dot is a wholesale vehicle sale.
 
 The red line highlights the overall relationship. There is a steep fall in price due to age in the first few months, which softens and stabilises, before gradually levelling off. This means that vehicles lose most of their value in the first couple of years, followed by a period of steady reduction in price (2-12 years), until there isn't much value left in the vehicle and the price levels off close to 0. It is easy to see why controlling for the age of a vehicle is important.
 
+To control for the age, each vehicle will be grouped together into an age cohort. For example, vehicles aged between 12 and 18 months will be grouped together. We will only compare vehicles with the same CAP ID and the same age cohort.
 
 
 ```{r age and sold price relationship}
@@ -76,12 +77,6 @@ ggplot(sample_n(data_subset, 10000), aes(age_months, sold_price)) + geom_point(c
 
 ```
 
-
-We can control for age in two ways, compare vehicles with exactly the same age or create small cohorts of vehicles with similar ages (e.g. group vehicles with ages between 3 and 6 months together). There are pros and cons to both. Using the exact age of a vehicle will allow us to completely control for age but will leave us with few vehicles to compare, especially when we take into consideration other influencers on price (mileage, vehicle condition, etc). Creating small groups would only allow us to control for some of the variance in price due to age but create groups with more vehicles to compare.
-
-For our purposes, small age cohorts will be created. The size of the groups is dependent on the age of the vehicle. Depreciation is at its most dramatic during the first year of a vehicles life-cycle, so these age cohorts will be split into 3-month sizes. Between ages 1 to 4 years, age cohorts will be split into 6-month sizes, 4 to 15 will be 1-year sized groups and 2-year sized groups for anything older.   
-
-*Only vehicles with the same age band will be compared.* 
 
 ```{r creating age cohorts}
 # Create the age cohorts
@@ -102,16 +97,11 @@ data_subset_with_age_cohorts <- data_subset %>%
 
 ####Mileage of a vehicle
 
-The relationship between mileage and sold price is similar to the relationship between age and sold price. As mileage increases, the price decreases. The rate of depreciation also shares the same shape as age; a steep initial drop in price for low mileage vehicles, then a steady, consistent rate of depreciation, before a levelling off towards the higher mileages.
+While there is a reasonably strong correlation between the mileage of a vehicle and the age, it is important to control for mileage. A vehicle registered on the same day will age at the same rate but can have very different mileages. One could have been bought as a second car and only used for short trips around town, the other could have been bought as the primary vehicle and has a hundred mile commute to tackle each work day. 
 
-The graph below illustrates this relationship. Mileage is measured on the x-axis, low mileages on the left, high mileages to the right. Price is measured on the y-axis, low prices at the bottom, high prices at the top.
+As the graph below illustrates, the relationship between mileage and sold price is similar to the relationship between age and sold price. Controlling for mileage will be handled in the same way as age. Each vehicle will be grouped into a mileage cohort, e.g. vehicles with mileages between 10,000 and 15,000 miles will be grouped together.  
 
-As with age, completely controlling for the mileage by exactly matching vehicles on mileage will result in too few vehicles to compare. Instead we'll group vehicles together based on their relative similarity in mileage. The depreciation rate is most abrupt for lower mileages, so the mileage cohorts will be split into 1,000-mile segments. 10,000 to 30,000 will be split by 5,000-mile segments, 30,000 to 100,000 by 10,000-mile segments and anything above 100,000 miles into cohorts of 20,000-mile segments.
-
-This should allow us to balance specificity with sample size.
-
-*Only vehicles with the same mileage band will be compared.*
-
+We will only compare vehicles with the same CAP ID, age cohort and mileage cohort.
 
 ```{r relationship between mileage and sold price}
 # Create a scatterplot showing age and wholesale price relationship
@@ -153,7 +143,8 @@ convert_months <- function(x){
 
 data_subset_cohorts <- data_subset_with_age_cohorts %>%
   mutate(mileage_cohort = cut(mileage, breaks = mileage_cutoffs, labels = mileage_labels),
-         month = convert_months(month(date_sold)))
+         month = convert_months(month(date_sold)),
+         quarter = quarter(sold_date))
 
 
 
@@ -165,20 +156,33 @@ Age and mileage can be good measures of the usage of the vehicle, but they don't
 
 Within the wholesale industry, the physical condition of a vehicle is given a grade. Within Manheim auctions, these scored range from one to five. Well-conditioned vehicles are given a grade of one, poorly conditioned vehicles are given a grade of five. Vehicles that do not meet the criteria to reach grade five are 'unclassified'. The price penalty between grade one and five can be significant. 
 
-*Only vehicles with the same condition grade will be compared.*
-
-
-In part 2:
-*How do we control for market levels effects such as inflation and seasonality? 
-*What effect does all of this have on the sample sizes of our comparable vehicles? 
-*How do we translate the near 2,000 colour types into something more usable?
-
+To control for condition we will only compare vehicles with same condition grade. Which means once we've controlled for the type and condition of a vehicle we will only be comparing vehicles with the same CAP ID, age cohort, mileage cohort and condition grade.
 
 ###Market conditions
 
+
+For the purposes of this analysis, the two market conditions we will control for are inflation and seasonality.
+
+####Seasonality 
+Supply and demand can be a key influencer on the price of a vehicle at auction. If demand is high and supply is low, then the price of a vehicle can increase and when there is an oversupply of vehicles, this can reduce the price of a vehicle.
+
+Throughout the year, supply and demand fluctuates to the tune of the market. Plate change usually preceeds an influx of part exchanges from consumers who want to upgrade to the latest and greatest models. Fleet vehicles that have finished their two year contracts come flooding back into the market. Each of these events affect the supply of these vehicles, which in turn can have an effect on the price of a vehicle. 
+
+To fully control for these seasonal market effects is beyond the scope of this analysis. For our purposes, we will simply group together vehicles sold in witin the same quarter. Why quarters and not months? There is a delicate balance between speciticity and sample size for our vehicle groups. We are already only comparing vehicles with the same CAP ID, age cohort, mileage cohort and condition grade. Only comparing vehicles sold with the same month will create sample sizes that are too small. Also, splitting by quarters feels natural. Quarter 1 covers the post christmas buying hangover to plate change. Quarter 2 covers the effect of the plate change. Quarters 3 and 4, mirror this effect in the second half of the year. The quietish summer months and run up to the second plate change is convered by quarter 3 and Quarter 4 covers the effect of the plate change and the slow down for christmas.
+
+```{r effect of quarters on sales/prices}
+
+```
+
+
+
+
 ####Adjusting for inflation
 
+
 Our data spans 24 months, over this time inflation has increased
+https://www.ons.gov.uk/economy/inflationandpriceindices/articles/consumerpriceindicesabriefguide/2016
+
 
 The UK Office of National Statistics (ONS) publishes monthly Consumer Price Index (CPI) figures for each major consumer sector. The closest CPI sector available for wholesale vehicles is the used car retail CPI figures. As the retail market drives the wholesale market, assuming that the wholesale CPI figures are similar to the retail CPI figures does not seem unreasonable. All sold prices will be adjusted to the December 2017 levels (the last month in the dataset).
 The ONS data can be downloaded here: _link to ONS CPI scores_
